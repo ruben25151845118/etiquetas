@@ -1,4 +1,4 @@
-name: Convert Jupyter Notebook to GitHub Pages
+name: Deploy Jupyter Notebook to Pages
 
 on:
   push:
@@ -15,8 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -26,110 +29,68 @@ jobs:
       with:
         python-version: '3.9'
         
-    - name: Install dependencies
+    - name: Install Jupyter
       run: |
-        pip install jupyter nbconvert
+        pip install jupyter nbconvert[webpdf]
+        
+    - name: Create docs directory
+      run: mkdir -p docs
         
     - name: Convert notebooks to HTML
       run: |
-        mkdir -p docs
+        # Convert all .ipynb files to HTML
         for notebook in *.ipynb; do
           if [ -f "$notebook" ]; then
+            echo "Converting $notebook"
             jupyter nbconvert --to html --output-dir=docs "$notebook"
           fi
         done
         
-    - name: Create index.html
+    - name: Create index page
       run: |
         cat > docs/index.html << 'EOF'
         <!DOCTYPE html>
-        <html lang="es">
+        <html>
         <head>
+            <title>Mis Notebooks</title>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Mi Proyecto de Jupyter Notebooks</title>
             <style>
-                body { 
-                    font-family: Arial, sans-serif; 
-                    max-width: 800px; 
-                    margin: 50px auto; 
-                    padding: 20px;
-                    line-height: 1.6;
-                }
-                .notebook-list { 
-                    list-style: none; 
-                    padding: 0; 
-                }
-                .notebook-item { 
-                    background: #f4f4f4; 
-                    margin: 10px 0; 
+                body { font-family: Arial, sans-serif; margin: 40px; }
+                h1 { color: #333; }
+                .notebook { 
+                    background: #f5f5f5; 
                     padding: 15px; 
-                    border-radius: 5px;
-                    border-left: 4px solid #007acc;
+                    margin: 10px 0; 
+                    border-radius: 5px; 
                 }
-                .notebook-item a { 
+                .notebook a { 
                     text-decoration: none; 
-                    color: #007acc; 
-                    font-weight: bold;
-                }
-                .notebook-item a:hover { 
-                    text-decoration: underline; 
+                    color: #0066cc; 
+                    font-weight: bold; 
                 }
             </style>
         </head>
         <body>
-            <h1>🚀 Mi Proyecto de Jupyter Notebooks</h1>
-            <p>Bienvenido a mi colección de notebooks de Google Colab convertidos para GitHub Pages.</p>
-            
-            <h2>📚 Notebooks Disponibles:</h2>
-            <ul class="notebook-list">
+            <h1>📚 Mis Jupyter Notebooks</h1>
         EOF
         
+        # Add links to all HTML files
         for html in docs/*.html; do
           if [ -f "$html" ] && [ "$(basename "$html")" != "index.html" ]; then
             filename=$(basename "$html")
-            name_without_ext="${filename%.*}"
-            echo "                <li class=\"notebook-item\">" >> docs/index.html
-            echo "                    <a href=\"$filename\">📓 $name_without_ext</a>" >> docs/index.html
-            echo "                    <p>Notebook convertido desde Google Colab</p>" >> docs/index.html
-            echo "                </li>" >> docs/index.html
+            name="${filename%.*}"
+            echo "<div class='notebook'>" >> docs/index.html
+            echo "<a href='$filename'>📓 $name</a>" >> docs/index.html
+            echo "</div>" >> docs/index.html
           fi
         done
         
-        cat >> docs/index.html << 'EOF'
-            </ul>
-            
-            <footer style="margin-top: 50px; text-align: center; color: #666;">
-                <p>Generado automáticamente con GitHub Actions</p>
-            </footer>
-        </body>
-        </html>
-        EOF
+        echo "</body></html>" >> docs/index.html
         
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: github-pages
-        path: './docs'
-        retention-days: 1
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
     - name: Setup Pages
       uses: actions/configure-pages@v5
       
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: github-pages
-        path: './docs'
-        
-    - name: Upload to GitHub Pages
+    - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
         path: './docs'
