@@ -1,104 +1,57 @@
-name: Deploy Jupyter Notebook to Pages
+import json
+import sys
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+def clean_notebook(filename):
+    """
+    Limpia los metadatos problemáticos de un notebook de Jupyter
+    """
+    try:
+        # Leer el archivo
+        with open(filename, 'r', encoding='utf-8') as f:
+            notebook = json.load(f)
+        
+        # Limpiar metadatos globales
+        if 'metadata' in notebook:
+            # Remover widgets problemáticos
+            if 'widgets' in notebook['metadata']:
+                del notebook['metadata']['widgets']
+            
+            # Limpiar otros metadatos problemáticos
+            problematic_keys = ['colab', 'accelerator']
+            for key in problematic_keys:
+                if key in notebook['metadata']:
+                    del notebook['metadata'][key]
+        
+        # Limpiar metadatos de cada celda
+        if 'cells' in notebook:
+            for cell in notebook['cells']:
+                if 'metadata' in cell:
+                    # Remover metadatos problemáticos de la celda
+                    problematic_cell_keys = ['colab', 'executionInfo', 'outputId']
+                    for key in problematic_cell_keys:
+                        if key in cell['metadata']:
+                            del cell['metadata'][key]
+                
+                # Limpiar outputs problemáticos
+                if 'outputs' in cell:
+                    for output in cell['outputs']:
+                        if 'metadata' in output:
+                            del output['metadata']
+        
+        # Guardar el archivo limpio
+        cleaned_filename = filename.replace('.ipynb', '_cleaned.ipynb')
+        with open(cleaned_filename, 'w', encoding='utf-8') as f:
+            json.dump(notebook, f, indent=2, ensure_ascii=False)
+        
+        print(f"✅ Notebook limpiado exitosamente: {cleaned_filename}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error limpiando el notebook: {e}")
+        return False
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-        
-    - name: Install Jupyter
-      run: |
-        pip install jupyter nbconvert[webpdf]
-        
-    - name: Create docs directory
-      run: mkdir -p docs
-        
-    - name: Convert notebooks to HTML
-      run: |
-        # Convert all .ipynb files to HTML
-        for notebook in *.ipynb; do
-          if [ -f "$notebook" ]; then
-            echo "Converting $notebook"
-            jupyter nbconvert --to html --output-dir=docs "$notebook"
-          fi
-        done
-        
-    - name: Create index page
-      run: |
-        cat > docs/index.html << 'EOF'
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Mis Notebooks</title>
-            <meta charset="UTF-8">
-            <style>
-                body { font-family: Arial, sans-serif; margin: 40px; }
-                h1 { color: #333; }
-                .notebook { 
-                    background: #f5f5f5; 
-                    padding: 15px; 
-                    margin: 10px 0; 
-                    border-radius: 5px; 
-                }
-                .notebook a { 
-                    text-decoration: none; 
-                    color: #0066cc; 
-                    font-weight: bold; 
-                }
-            </style>
-        </head>
-        <body>
-            <h1>📚 Mis Jupyter Notebooks</h1>
-        EOF
-        
-        # Add links to all HTML files
-        for html in docs/*.html; do
-          if [ -f "$html" ] && [ "$(basename "$html")" != "index.html" ]; then
-            filename=$(basename "$html")
-            name="${filename%.*}"
-            echo "<div class='notebook'>" >> docs/index.html
-            echo "<a href='$filename'>📓 $name</a>" >> docs/index.html
-            echo "</div>" >> docs/index.html
-          fi
-        done
-        
-        echo "</body></html>" >> docs/index.html
-        
-    - name: Upload Pages artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: docs
-
-  deploy:
-    needs: build
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Uso: python clean_notebook.py archivo.ipynb")
+    else:
+        clean_notebook(sys.argv[1])
